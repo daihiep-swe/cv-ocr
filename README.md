@@ -122,10 +122,7 @@ python3 run_grading.py -a answers/ -i exams/
 
 ```bash
 # Chấm với 50 câu, mỗi câu 0.2 điểm
-./run_grading.sh -a answers/ -i exams/ -n 50 -p 0.2
-
-# Xuất ra file cụ thể
-./run_grading.sh -a answers/ -i exams/ -o result/lop10A.csv
+./run_grading.sh -a answers/ -i exams/
 
 # Nhập đáp án thủ công
 ./run_grading.sh -m -i exams/
