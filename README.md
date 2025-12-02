@@ -82,8 +82,14 @@ Tạo file đáp án trong thư mục `answers/`. Mỗi file là một mã đề
 
 ### Bước 3: Chạy chấm điểm
 
+**Cách 1: Sử dụng shell script (Khuyến nghị)**
 ```bash
-python3 app.py -a answers/ -i exams/
+./run_grading.sh -a answers/ -i exams/
+```
+
+**Cách 2: Sử dụng Python trực tiếp**
+```bash
+python3 run_grading.py -a answers/ -i exams/
 ```
 
 ## 💻 Các Lệnh
@@ -92,13 +98,13 @@ python3 app.py -a answers/ -i exams/
 
 ```bash
 # Chấm tất cả phiếu trong thư mục exams/
-python3 app.py -a answers/ -i exams/
+./run_grading.sh -a answers/ -i exams/
 
 # Chấm các phiếu cụ thể
-python3 app.py -a answers/ -i exams/001_*.jpg
+./run_grading.sh -a answers/ -i exams/001_*.jpg
 
 # Chấm một phiếu
-python3 app.py -a answers/001.txt -i exams/001_123456.jpg
+./run_grading.sh -a answers/001.txt -i exams/001_123456.jpg
 ```
 
 ### Các tùy chọn
@@ -116,13 +122,13 @@ python3 app.py -a answers/001.txt -i exams/001_123456.jpg
 
 ```bash
 # Chấm với 50 câu, mỗi câu 0.2 điểm
-python3 app.py -a answers/ -i exams/ -n 50 -p 0.2
+./run_grading.sh -a answers/ -i exams/ -n 50 -p 0.2
 
 # Xuất ra file cụ thể
-python3 app.py -a answers/ -i exams/ -o result/lop10A.csv
+./run_grading.sh -a answers/ -i exams/ -o result/lop10A.csv
 
 # Nhập đáp án thủ công
-python3 app.py -m -i exams/
+./run_grading.sh -m -i exams/
 ```
 
 ### Phúc khảo bài thi
@@ -131,10 +137,10 @@ Kiểm tra chi tiết bài thi của 1 học sinh theo số báo danh:
 
 ```bash
 # Phúc khảo theo số báo danh
-python3 review.py 123456
+./run_review.sh 123456
 
 # Chỉ định thư mục đáp án và ảnh
-python3 review.py 123456 -a answers/ -i exams/
+./run_review.sh 123456 -a answers/ -i exams/
 ```
 
 **Kết quả phúc khảo:**
