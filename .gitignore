@@ -1,0 +1,38 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output files
+*.xlsx
+*.xls
+sample_sheet_*.jpg
+ketqua_*.xlsx
+
+# Logs
+*.log
+
+
+# result and exams folders
+result/
+debug/
+exams/

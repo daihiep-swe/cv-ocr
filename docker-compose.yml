@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # Main grading service
+  grader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: exam-grader
+    volumes:
+      # Mount local directories
+      - ./answers:/app/answers:ro      # Read-only answers
+      - ./exams:/app/exams:ro          # Read-only exam images
+      - ./result:/app/result           # Output results
+      - ./paper.jpg:/app/paper.jpg:ro  # Template image (optional)
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Default: show help
+    # Override with: docker-compose run grader -a answers/ -i exams/
+    command: ["-a", "answers/", "-i", "exams/"]
+
+  # Generate test images (for testing)
+  generator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: exam-generator
+    volumes:
+      - ./answers:/app/answers:ro
+      - ./exams:/app/exams
+      - ./paper.jpg:/app/paper.jpg:ro
+    entrypoint: ["python", "debug/generate_test_image.py"]
+    profiles:
+      - tools
+
+  # Debug view (for debugging)
+  debugger:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: exam-debugger
+    volumes:
+      - ./exams:/app/exams:ro
+      - ./debug:/app/debug
+    entrypoint: ["python", "debug/debug_view.py"]
+    command: ["exams/"]
+    profiles:
+      - tools
+
+# Named volumes (optional, for persistent data)
+volumes:
+  results:
+    driver: local
