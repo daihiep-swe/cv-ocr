@@ -15,22 +15,73 @@ import re
 
 class ExamSheetProcessor:
     """Xử lý và nhận diện phiếu thi trắc nghiệm"""
+    
+    # ==================== CONSTANTS ====================
+    
+    # Kích thước chuẩn của phiếu thi (pixel)
+    STANDARD_WIDTH = 1920
+    STANDARD_HEIGHT = 2755
+    
+    # Ngưỡng diện tích bubble (pixel²)
+    # - MIN: Loại bỏ nhiễu nhỏ, chấm bẩn
+    # - MAX: Loại bỏ các vùng lớn như ô vuông, text box
+    BUBBLE_AREA_MIN = 200
+    BUBBLE_AREA_MAX = 3000
+    
+    # Ngưỡng tỷ lệ cạnh (width/height) để xác định hình gần vuông
+    # Bubble tròn có tỷ lệ ~1.0, chấp nhận từ 0.7 đến 1.4
+    ASPECT_RATIO_MIN = 0.7
+    ASPECT_RATIO_MAX = 1.4
+    
+    # Ngưỡng độ tròn (circularity = 4π × area / perimeter²)
+    # Hình tròn hoàn hảo = 1.0, hình vuông ≈ 0.785
+    # Chấp nhận từ 0.3 để bắt cả ô đã tô đen (bị méo)
+    CIRCULARITY_MIN = 0.3
+    
+    # Ngưỡng tương phản để xác định ô được tô
+    # Độ chênh lệch độ sáng giữa ô đậm nhất và nhạt nhất
+    CONTRAST_THRESHOLD = 10
+    
+    # Ngưỡng khoảng cách để loại bỏ bubble trùng lặp (pixel)
+    DUPLICATE_THRESHOLD = 25
+    
+    # ==================== VÙNG SỐ BÁO DANH (tỷ lệ % ảnh) ====================
+    SBD_X_START = 0.73
+    SBD_X_END = 0.85
+    SBD_Y_START = 0.09
+    SBD_Y_END = 0.285
+    SBD_NUM_COLS = 6
+    
+    # ==================== VÙNG MÃ ĐỀ (tỷ lệ % ảnh) ====================
+    EXAM_X_START = 0.88
+    EXAM_X_END = 0.94
+    EXAM_Y_START = 0.09
+    EXAM_Y_END = 0.285
+    EXAM_NUM_COLS = 3
+    
+    # ==================== VÙNG ĐÁP ÁN PHẦN I (tỷ lệ % ảnh) ====================
+    ANSWER_Y_START = 0.365
+    ANSWER_Y_END = 0.523
+    # Mỗi tuple: (x_start, x_end, câu_bắt_đầu)
+    ANSWER_COLUMNS = [
+        (0.118, 0.265, 1),    # Cột 1: câu 1-10
+        (0.331, 0.478, 11),   # Cột 2: câu 11-20
+        (0.544, 0.691, 21),   # Cột 3: câu 21-30
+        (0.757, 0.904, 31),   # Cột 4: câu 31-40
+    ]
+    
+    # Mapping đáp án
+    CHOICE_MAP = {0: "A", 1: "B", 2: "C", 3: "D"}
 
     def __init__(self, num_questions: int = 40):
         """
         Khởi tạo processor
 
         Args:
-            num_questions: Số câu hỏi PHẦN I (mặc định 40)
+            num_questions: Số câu hỏi (mặc định 40)
         """
         self.num_questions = num_questions
         self.choices_per_question = 4  # A, B, C, D
-        # self.part2_questions = 8  # PHẦN II: 8 câu
-        # self.part3_questions = 6  # PHẦN III: 6 câu
-    
-    # Kích thước chuẩn của phiếu thi (paper.jpg)
-    STANDARD_WIDTH = 1920
-    STANDARD_HEIGHT = 2755
     
     def preprocess_image(self, image_path: str) -> Optional[np.ndarray]:
         """
@@ -106,7 +157,7 @@ class ExamSheetProcessor:
             area = cv2.contourArea(contour)
 
             # Lọc theo kích thước
-            if area < 200 or area > 3000:
+            if area < self.BUBBLE_AREA_MIN or area > self.BUBBLE_AREA_MAX:
                 continue
 
             # Lấy bounding box
@@ -114,7 +165,7 @@ class ExamSheetProcessor:
             aspect_ratio = w / float(h) if h > 0 else 0
 
             # Kiểm tra tỷ lệ gần vuông (cho hình tròn)
-            if not (0.7 <= aspect_ratio <= 1.4):
+            if not (self.ASPECT_RATIO_MIN <= aspect_ratio <= self.ASPECT_RATIO_MAX):
                 continue
             
             # Kiểm tra độ tròn (circularity)
@@ -124,8 +175,7 @@ class ExamSheetProcessor:
             circularity = 4 * np.pi * area / (perimeter * perimeter)
             
             # Hình tròn hoàn hảo có circularity = 1.0
-            # Chấp nhận từ 0.3 trở lên (để bắt cả ô đã tô đen)
-            if circularity >= 0.3:
+            if circularity >= self.CIRCULARITY_MIN:
                 bubbles.append((x, y, w, h))
 
         # Lọc bỏ các ô trùng lặp
@@ -136,7 +186,7 @@ class ExamSheetProcessor:
 
         return bubbles
     
-    def _remove_duplicate_bubbles(self, bubbles: List[Tuple], threshold: int = 25) -> List[Tuple]:
+    def _remove_duplicate_bubbles(self, bubbles: List[Tuple]) -> List[Tuple]:
         """Loại bỏ các ô trùng lặp hoặc quá gần nhau"""
         if not bubbles:
             return []
@@ -153,7 +203,7 @@ class ExamSheetProcessor:
                 center_u = (u[0] + u[2]//2, u[1] + u[3]//2)
                 dist = ((center_b[0] - center_u[0])**2 + (center_b[1] - center_u[1])**2)**0.5
                 
-                if dist < threshold:
+                if dist < self.DUPLICATE_THRESHOLD:
                     is_dup = True
                     break
             if not is_dup:
@@ -232,56 +282,38 @@ class ExamSheetProcessor:
         """
         height, width = image.shape
 
-        # Tham số từ debug_view.py đã calibrate
-        # Vùng SỐ BÁO DANH (6 cột)
-        SBD_X_START = 0.73
-        SBD_X_END = 0.85
-        SBD_Y_START = 0.09
-        SBD_Y_END = 0.285
-        SBD_NUM_COLS = 6
-
-        # Vùng MÃ ĐỀ (3 cột)
-        EXAM_X_START = 0.88
-        EXAM_X_END = 0.94
-        EXAM_Y_START = 0.09
-        EXAM_Y_END = 0.285
-        EXAM_NUM_COLS = 3
-        
-        CONTRAST_THRESHOLD = 10  # Ngưỡng tương phản để xác định ô được tô
-
         # Lọc bubbles trong vùng SBD
         sbd_bubbles = [
             (x, y, w, h)
             for x, y, w, h in bubbles
-            if SBD_X_START * width < x < SBD_X_END * width 
-            and SBD_Y_START * height < y < SBD_Y_END * height
+            if self.SBD_X_START * width < x < self.SBD_X_END * width 
+            and self.SBD_Y_START * height < y < self.SBD_Y_END * height
         ]
         
         # Lọc bubbles trong vùng mã đề
         exam_code_bubbles = [
             (x, y, w, h)
             for x, y, w, h in bubbles
-            if EXAM_X_START * width < x < EXAM_X_END * width 
-            and EXAM_Y_START * height < y < EXAM_Y_END * height
+            if self.EXAM_X_START * width < x < self.EXAM_X_END * width 
+            and self.EXAM_Y_START * height < y < self.EXAM_Y_END * height
         ]
 
         # Đảm bảo có đủ grid và đọc giá trị
-        sbd_full_grid = self._ensure_full_grid(sbd_bubbles, num_cols=SBD_NUM_COLS, num_rows=10)
-        exam_full_grid = self._ensure_full_grid(exam_code_bubbles, num_cols=EXAM_NUM_COLS, num_rows=10)
+        sbd_full_grid = self._ensure_full_grid(sbd_bubbles, num_cols=self.SBD_NUM_COLS, num_rows=10)
+        exam_full_grid = self._ensure_full_grid(exam_code_bubbles, num_cols=self.EXAM_NUM_COLS, num_rows=10)
 
-        student_id = self._read_digit_grid(image, sbd_full_grid, CONTRAST_THRESHOLD)
-        exam_code = self._read_digit_grid(image, exam_full_grid, CONTRAST_THRESHOLD)
+        student_id = self._read_digit_grid(image, sbd_full_grid)
+        exam_code = self._read_digit_grid(image, exam_full_grid)
 
         return student_id, exam_code
     
-    def _read_digit_grid(self, image: np.ndarray, full_grid: List[List[Tuple]], contrast_threshold: float = 10) -> str:
+    def _read_digit_grid(self, image: np.ndarray, full_grid: List[List[Tuple]]) -> str:
         """
-        Đọc giá trị từ grid số (SBD, Mã đề) - logic giống debug_view.py
+        Đọc giá trị từ grid số (SBD, Mã đề)
         
         Args:
             image: Ảnh threshold
             full_grid: Grid đầy đủ từ _ensure_full_grid
-            contrast_threshold: Ngưỡng tương phản
             
         Returns:
             Chuỗi số đọc được
@@ -309,7 +341,7 @@ class ExamSheetProcessor:
                 max_dark = selected[1]
                 min_dark = darkness_values[-1][1]
                 
-                if max_dark - min_dark >= contrast_threshold:
+                if max_dark - min_dark >= self.CONTRAST_THRESHOLD:
                     digit = selected[0]
                     result += str(digit)
                 else:
@@ -676,7 +708,6 @@ class ExamSheetProcessor:
     ) -> Dict[int, str]:
         """
         Trích xuất đáp án PHẦN I (40 câu) từ các ô tô
-        Sử dụng logic giống debug_view.py
 
         Args:
             image: Ảnh đã xử lý
@@ -688,26 +719,13 @@ class ExamSheetProcessor:
         answers = {}
         height, width = image.shape
 
-        # Tham số từ debug_view.py đã calibrate
-        ANSWER_Y_START = 0.365
-        ANSWER_Y_END = 0.523
-        ANSWER_COLUMNS = [
-            (0.118, 0.265, 1),    # Cột 1: câu 1-10
-            (0.331, 0.478, 11),   # Cột 2: câu 11-20
-            (0.544, 0.691, 21),   # Cột 3: câu 21-30
-            (0.757, 0.904, 31),   # Cột 4: câu 31-40
-        ]
-        CONTRAST_THRESHOLD = 10
-
-        choice_map = {0: "A", 1: "B", 2: "C", 3: "D"}
-
-        for col_x_start, col_x_end, start_question in ANSWER_COLUMNS:
+        for col_x_start, col_x_end, start_question in self.ANSWER_COLUMNS:
             # Lọc bubbles trong vùng cột này
             col_bubbles = [
                 (x, y, w, h)
                 for x, y, w, h in bubbles
                 if col_x_start * width < x < col_x_end * width 
-                and ANSWER_Y_START * height < y < ANSWER_Y_END * height
+                and self.ANSWER_Y_START * height < y < self.ANSWER_Y_END * height
             ]
 
             if not col_bubbles:
@@ -716,8 +734,8 @@ class ExamSheetProcessor:
             # Tính vị trí pixel của vùng cột
             region_x_start = int(col_x_start * width)
             region_x_end = int(col_x_end * width)
-            region_y_start = int(ANSWER_Y_START * height)
-            region_y_end = int(ANSWER_Y_END * height)
+            region_y_start = int(self.ANSWER_Y_START * height)
+            region_y_end = int(self.ANSWER_Y_END * height)
 
             # Đảm bảo có đủ 40 ô (4 cột A,B,C,D x 10 hàng)
             full_grid = self._ensure_full_answer_grid(
@@ -732,7 +750,7 @@ class ExamSheetProcessor:
             # Đọc đáp án từ grid
             for row_idx, row_bubbles in enumerate(full_grid):
                 question_num = start_question + row_idx
-                if question_num > 40:
+                if question_num > self.num_questions:
                     break
 
                 # Tính độ đậm của từng ô trong hàng
@@ -741,9 +759,9 @@ class ExamSheetProcessor:
                     bubble_roi = image[y:y+h, x:x+w]
                     if bubble_roi.size > 0:
                         avg_intensity = np.mean(bubble_roi)
-                        darkness_values.append((col_idx, avg_intensity, x, y, w, h))
+                        darkness_values.append((col_idx, avg_intensity))
                     else:
-                        darkness_values.append((col_idx, 0, x, y, w, h))
+                        darkness_values.append((col_idx, 0))
 
                 if darkness_values:
                     # Sắp xếp theo độ đậm (cao nhất = được tô)
@@ -752,10 +770,10 @@ class ExamSheetProcessor:
                     max_dark = selected[1]
                     min_dark = darkness_values[-1][1]
 
-                    if max_dark - min_dark >= CONTRAST_THRESHOLD:
+                    if max_dark - min_dark >= self.CONTRAST_THRESHOLD:
                         choice_idx = selected[0]
-                        if choice_idx < 4:
-                            answers[question_num] = choice_map[choice_idx]
+                        if choice_idx < len(self.CHOICE_MAP):
+                            answers[question_num] = self.CHOICE_MAP[choice_idx]
 
         return answers
 
@@ -1019,10 +1037,10 @@ class ExamSheetProcessor:
         COLOR_SELECTED = (255, 0, 255) # Tím - Ô được chọn (tô đậm nhất)
         
         # ========== VẼ VÙNG SỐ BÁO DANH ==========
-        sbd_x1 = int(0.71 * width)
-        sbd_x2 = int(0.85 * width)
-        sbd_y1 = int(0.10 * height)
-        sbd_y2 = int(0.30 * height)
+        sbd_x1 = int(self.SBD_X_START * width)
+        sbd_x2 = int(self.SBD_X_END * width)
+        sbd_y1 = int(self.SBD_Y_START * height)
+        sbd_y2 = int(self.SBD_Y_END * height)
         cv2.rectangle(image, (sbd_x1, sbd_y1), (sbd_x2, sbd_y2), COLOR_SBD, 3)
         cv2.putText(image, "SO BAO DANH", (sbd_x1, sbd_y1 - 10), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, COLOR_SBD, 2)
@@ -1030,7 +1048,8 @@ class ExamSheetProcessor:
         # Lọc bubbles trong vùng SBD
         sbd_bubbles = [
             (x, y, w, h) for x, y, w, h in bubbles
-            if 0.71 * width < x < 0.85 * width and 0.10 * height < y < 0.30 * height
+            if self.SBD_X_START * width < x < self.SBD_X_END * width 
+            and self.SBD_Y_START * height < y < self.SBD_Y_END * height
         ]
         
         # Vẽ tất cả bubbles trong vùng SBD
@@ -1039,7 +1058,7 @@ class ExamSheetProcessor:
         
         # Nhóm theo cột và tìm ô được chọn
         sbd_columns = self._group_bubbles_by_column(sbd_bubbles, tolerance=20)
-        valid_sbd_cols = [col for col in sbd_columns if len(col) >= 8][:6]
+        valid_sbd_cols = [col for col in sbd_columns if len(col) >= 8][:self.SBD_NUM_COLS]
         
         student_id = ""
         for col_bubbles in valid_sbd_cols:
@@ -1059,7 +1078,7 @@ class ExamSheetProcessor:
                 max_dark = selected[1]
                 min_dark = darkness_values[-1][1]
                 
-                if max_dark - min_dark >= 15:
+                if max_dark - min_dark >= self.CONTRAST_THRESHOLD:
                     # Vẽ ô được chọn với màu tím và đường dày hơn
                     x, y, w, h = selected[2], selected[3], selected[4], selected[5]
                     cv2.rectangle(image, (x-2, y-2), (x+w+2, y+h+2), COLOR_SELECTED, 3)
@@ -1068,10 +1087,10 @@ class ExamSheetProcessor:
                     student_id += "0"
         
         # ========== VẼ VÙNG MÃ ĐỀ ==========
-        exam_x1 = int(0.86 * width)
-        exam_x2 = int(0.96 * width)
-        exam_y1 = int(0.10 * height)
-        exam_y2 = int(0.30 * height)
+        exam_x1 = int(self.EXAM_X_START * width)
+        exam_x2 = int(self.EXAM_X_END * width)
+        exam_y1 = int(self.EXAM_Y_START * height)
+        exam_y2 = int(self.EXAM_Y_END * height)
         cv2.rectangle(image, (exam_x1, exam_y1), (exam_x2, exam_y2), COLOR_EXAM, 3)
         cv2.putText(image, "MA DE", (exam_x1, exam_y1 - 10), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, COLOR_EXAM, 2)
@@ -1079,7 +1098,8 @@ class ExamSheetProcessor:
         # Lọc bubbles trong vùng mã đề
         exam_bubbles = [
             (x, y, w, h) for x, y, w, h in bubbles
-            if 0.86 * width < x < 0.96 * width and 0.10 * height < y < 0.30 * height
+            if self.EXAM_X_START * width < x < self.EXAM_X_END * width 
+            and self.EXAM_Y_START * height < y < self.EXAM_Y_END * height
         ]
         
         for (x, y, w, h) in exam_bubbles:
@@ -1087,7 +1107,7 @@ class ExamSheetProcessor:
         
         # Nhóm theo cột và tìm ô được chọn cho mã đề
         exam_columns = self._group_bubbles_by_column(exam_bubbles, tolerance=20)
-        valid_exam_cols = [col for col in exam_columns if len(col) >= 8][:3]
+        valid_exam_cols = [col for col in exam_columns if len(col) >= 8][:self.EXAM_NUM_COLS]
         
         exam_code = ""
         for col_bubbles in valid_exam_cols:
@@ -1106,7 +1126,7 @@ class ExamSheetProcessor:
                 max_dark = selected[1]
                 min_dark = darkness_values[-1][1]
                 
-                if max_dark - min_dark >= 15:
+                if max_dark - min_dark >= self.CONTRAST_THRESHOLD:
                     x, y, w, h = selected[2], selected[3], selected[4], selected[5]
                     cv2.rectangle(image, (x-2, y-2), (x+w+2, y+h+2), COLOR_SELECTED, 3)
                     exam_code += str(selected[0])
@@ -1114,20 +1134,11 @@ class ExamSheetProcessor:
                     exam_code += "0"
         
         # ========== VẼ VÙNG ĐÁP ÁN PHẦN I ==========
-        Y_START = 0.355
-        Y_END = 0.523
-        COLUMNS = [
-            (0.095, 0.245, 1),
-            (0.32, 0.47, 11),
-            (0.545, 0.695, 21),
-            (0.77, 0.92, 31),
-        ]
-        
-        for col_x_start, col_x_end, start_q in COLUMNS:
+        for col_x_start, col_x_end, start_q in self.ANSWER_COLUMNS:
             x1 = int(col_x_start * width)
             x2 = int(col_x_end * width)
-            y1 = int(Y_START * height)
-            y2 = int(Y_END * height)
+            y1 = int(self.ANSWER_Y_START * height)
+            y2 = int(self.ANSWER_Y_END * height)
             cv2.rectangle(image, (x1, y1), (x2, y2), COLOR_ANSWERS, 2)
             cv2.putText(image, f"Cau {start_q}-{start_q+9}", (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ANSWERS, 2)
