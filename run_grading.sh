@@ -2,6 +2,8 @@
 # Exam Grading System - Main Script
 # Chạy chương trình chấm điểm trắc nghiệm tự động
 
+#source venv/bin/activate
+
 # Màu sắc cho output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
