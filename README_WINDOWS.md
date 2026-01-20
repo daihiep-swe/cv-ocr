@@ -85,4 +85,3 @@ File Excel sẽ được lưu trong thư mục `result\` với 3 sheet:
 ---
 
 Made with ❤️ by AI Assistant
-# 📝 Phần Mềm Chấm Điểm Trắc Nghiệm - Hướng Dẫn Windows

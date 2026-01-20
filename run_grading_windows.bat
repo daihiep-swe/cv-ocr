@@ -35,7 +35,7 @@ if not exist "requirements.txt" (
 )
 
 echo [INFO] Verifying core dependencies...
-python -c "import cv2, numpy" >nul 2>&1
+python -c "import cv2, numpy, pandas, openpyxl" >nul 2>&1
 if errorlevel 1 (
     echo [WARN] Dependencies not fully installed. Installing from requirements.txt...
     python -m pip install -r requirements.txt || goto :deps_failed

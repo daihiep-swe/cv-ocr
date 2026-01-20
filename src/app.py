@@ -8,7 +8,7 @@ import os
 from typing import Dict, List, Tuple
 from image_processor import ExamSheetProcessor
 from grading_system import GradingSystem
-from csv_exporter import CSVExporter
+from excel_exporter import ExcelExporter
 from datetime import datetime
 from multiprocessing import Pool, cpu_count
 import sys
@@ -341,7 +341,7 @@ Ví dụ sử dụng:
     parser.add_argument(
         "-o",
         "--output",
-        help="File CSV output (mặc định: ketqua_YYYYMMDD_HHMMSS.csv)",
+        help="File Excel output (mặc định: ketqua_YYYYMMDD_HHMMSS.xlsx)",
     )
 
     parser.add_argument(
@@ -408,11 +408,11 @@ Ví dụ sử dụng:
     # 4. Hiển thị kết quả
     display_results(results)
 
-    # 5. Hỏi người dùng có muốn xuất CSV không
+    # 5. Hỏi người dùng có muốn xuất Excel không
     if results:
         print("\n" + "-" * 50)
         export_choice = (
-            input("Bạn có muốn xuất kết quả ra file CSV không? (y/n): ").strip().lower()
+            input("Bạn có muốn xuất kết quả ra file Excel không? (y/n): ").strip().lower()
         )
 
         if export_choice in ["y", "yes", "có", "co", ""]:
@@ -421,20 +421,20 @@ Ví dụ sử dụng:
             os.makedirs(result_dir, exist_ok=True)
 
             output_file = args.output or os.path.join(
-                result_dir, f"ketqua_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                result_dir, f"ketqua_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             )
 
             # Đảm bảo file nằm trong thư mục result
             if not output_file.startswith(result_dir):
                 output_file = os.path.join(result_dir, os.path.basename(output_file))
 
-            exporter = CSVExporter()
+            exporter = ExcelExporter()
             if exporter.export_results(results, output_file, include_details=True):
                 print(f"\n✓ Đã xuất kết quả ra file: {output_file}")
             else:
-                print(f"\n✗ Không thể xuất file CSV")
+                print(f"\n✗ Không thể xuất file Excel")
         else:
-            print("\n⏭️  Bỏ qua xuất file CSV")
+            print("\n⏭️  Bỏ qua xuất file Excel")
 
     print("\n" + "=" * 80)
     print("HOÀN THÀNH!")

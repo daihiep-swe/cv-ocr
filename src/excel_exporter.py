@@ -29,9 +29,16 @@ class ExcelExporter:
             True nếu thành công, False nếu có lỗi
         """
         try:
+            # Đảm bảo đuôi file là .xlsx
+            if not output_path.endswith('.xlsx'):
+                output_path = output_path.rsplit('.', 1)[0] + '.xlsx'
+
+            # Sắp xếp kết quả theo số báo danh
+            sorted_results = sorted(results, key=lambda x: x["student_id"])
+
             # Tạo DataFrame chính với thông tin tổng quan
             main_data = []
-            for result in results:
+            for result in sorted_results:
                 main_data.append(
                     {
                         "Số báo danh": result["student_id"],
@@ -42,6 +49,7 @@ class ExcelExporter:
                         "Tổng số câu": result["total_questions"],
                         "Điểm tối đa": result["max_score"],
                         "Phần trăm (%)": round(result["percentage"], 2),
+                        "Tên file ảnh": result.get("image_file", ""),
                     }
                 )
 
