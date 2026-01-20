@@ -30,15 +30,35 @@ Nếu hiện `Python 3.x.x` là thành công ✅
 
 ### Chạy chấm điểm
 
-**Cách 1: Double-click**
+**Cách 1: Double-click (đơn giản nhất)**
 - Mở thư mục chứa chương trình
 - Double-click vào file `run_grading_windows.bat`
 
-**Cách 2: Command Prompt**
+**Cách 2: Chạy thuần Python (từng bước)**
+
+Mở **Command Prompt** và chạy lần lượt:
+
 ```cmd
 cd C:\đường\dẫn\đến\thư\mục\scan
-run_grading_windows.bat -a answers\ -i exams\
+
+rem Tạo môi trường ảo (chỉ cần chạy 1 lần)
+python -m venv venv
+
+rem Kích hoạt môi trường ảo
+venv\Scripts\activate
+
+rem Cài đặt thư viện (chỉ cần chạy 1 lần)
+pip install -r requirements.txt
+
+rem Chạy chấm điểm
+python run_grading.py -a answers\ -i exams\
 ```
+
+> 💡 **Lưu ý:** Từ lần sau chỉ cần kích hoạt venv và chạy:
+> ```cmd
+> venv\Scripts\activate
+> python run_grading.py -a answers\ -i exams\
+> ```
 
 ### Các tùy chọn
 
