@@ -14,6 +14,28 @@ class ExcelExporter:
         """Khởi tạo exporter"""
         pass
 
+    def _auto_adjust_column_width(self, worksheet, dataframe):
+        """
+        Tự động điều chỉnh độ rộng cột dựa trên nội dung
+        
+        Args:
+            worksheet: openpyxl worksheet object
+            dataframe: pandas DataFrame chứa dữ liệu
+        """
+        for idx, col in enumerate(dataframe.columns):
+            # Tính độ rộng dựa trên header và dữ liệu
+            max_length = len(str(col))
+            
+            for value in dataframe[col].astype(str):
+                max_length = max(max_length, len(value))
+            
+            # Thêm padding và giới hạn độ rộng tối đa
+            adjusted_width = min(max_length + 3, 50)
+            
+            # Lấy ký tự cột (A, B, C, ...)
+            col_letter = worksheet.cell(row=1, column=idx + 1).column_letter
+            worksheet.column_dimensions[col_letter].width = adjusted_width
+
     def export_results(
         self, results: List[Dict], output_path: str, include_details: bool = False
     ) -> bool:
@@ -59,6 +81,7 @@ class ExcelExporter:
             with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
                 # Sheet 1: Kết quả tổng quan
                 df_main.to_excel(writer, sheet_name="Kết quả", index=False)
+                self._auto_adjust_column_width(writer.sheets["Kết quả"], df_main)
 
                 # Sheet 2: Chi tiết câu sai (nếu yêu cầu)
                 if include_details:
@@ -80,6 +103,7 @@ class ExcelExporter:
                         df_detail.to_excel(
                             writer, sheet_name="Chi tiết câu sai", index=False
                         )
+                        self._auto_adjust_column_width(writer.sheets["Chi tiết câu sai"], df_detail)
 
                 # Sheet 3: Thống kê (nếu có nhiều hơn 1 bài thi)
                 if len(results) > 1:
@@ -120,6 +144,7 @@ class ExcelExporter:
 
                     df_stats = pd.DataFrame(stats_data)
                     df_stats.to_excel(writer, sheet_name="Thống kê", index=False)
+                    self._auto_adjust_column_width(writer.sheets["Thống kê"], df_stats)
 
             print(f"Đã xuất kết quả ra file: {output_path}")
             return True
