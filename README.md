@@ -82,12 +82,17 @@ Tạo file đáp án trong thư mục `answers/`. Mỗi file là một mã đề
 
 ### Bước 3: Chạy chấm điểm
 
-**Cách 1: Sử dụng shell script (Khuyến nghị)**
+**Cách 1: Sử dụng shell script (macOS/Linux)**
 ```bash
 ./run_grading.sh -a answers/ -i exams/
 ```
 
-**Cách 2: Sử dụng Python trực tiếp**
+**Cách 2: Sử dụng batch script (Windows)**
+```bat
+run_grading_windows.bat -a answers/ -i exams/
+```
+
+**Cách 3: Sử dụng Python trực tiếp**
 ```bash
 python3 run_grading.py -a answers/ -i exams/
 ```
