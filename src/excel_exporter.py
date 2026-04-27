@@ -55,23 +55,34 @@ class ExcelExporter:
             if not output_path.endswith('.xlsx'):
                 output_path = output_path.rsplit('.', 1)[0] + '.xlsx'
 
-            # Sắp xếp kết quả theo số báo danh
-            sorted_results = sorted(results, key=lambda x: x["student_id"])
+            # Sắp xếp kết quả theo số báo danh, lỗi không có SBD sẽ nằm cuối theo tên file
+            sorted_results = sorted(
+                results,
+                key=lambda x: (x.get("student_id") or "~", x.get("image_file", "")),
+            )
 
             # Tạo DataFrame chính với thông tin tổng quan
             main_data = []
             for result in sorted_results:
+                wrong_questions = " ".join(
+                    str(wrong_q["question"])
+                    for wrong_q in result.get("wrong_questions", [])
+                )
+                percentage = result.get("percentage", "")
                 main_data.append(
                     {
-                        "Số báo danh": result["student_id"],
-                        "Mã đề": result.get("exam_code", "000"),
-                        "Điểm": result["score"],
-                        "Số câu đúng": result["correct_count"],
-                        "Số câu sai": result["incorrect_count"],
-                        "Tổng số câu": result["total_questions"],
-                        "Điểm tối đa": result["max_score"],
-                        "Phần trăm (%)": round(result["percentage"], 2),
-                        "Tên file ảnh": result.get("image_file", ""),
+                        "image_file": result.get("image_file", ""),
+                        "student_id": result.get("student_id", ""),
+                        "exam_code": result.get("exam_code", ""),
+                        "score": result.get("score", ""),
+                        "correct_count": result.get("correct_count", ""),
+                        "wrong_questions": wrong_questions,
+                        "status": result.get("status", "ok"),
+                        "error": result.get("error", ""),
+                        "incorrect_count": result.get("incorrect_count", ""),
+                        "total_questions": result.get("total_questions", ""),
+                        "max_score": result.get("max_score", ""),
+                        "percentage": round(percentage, 2) if isinstance(percentage, (int, float)) else percentage,
                     }
                 )
 
@@ -87,10 +98,12 @@ class ExcelExporter:
                 if include_details:
                     detail_data = []
                     for result in results:
-                        for wrong_q in result["wrong_questions"]:
+                        if result.get("status") == "error":
+                            continue
+                        for wrong_q in result.get("wrong_questions", []):
                             detail_data.append(
                                 {
-                                    "Số báo danh": result["student_id"],
+                                    "Số báo danh": result.get("student_id", ""),
                                     "Mã đề": result.get("exam_code", "000"),
                                     "Câu hỏi": wrong_q["question"],
                                     "Đáp án đúng": wrong_q["correct_answer"],
@@ -105,18 +118,16 @@ class ExcelExporter:
                         )
                         self._auto_adjust_column_width(writer.sheets["Chi tiết câu sai"], df_detail)
 
-                # Sheet 3: Thống kê (nếu có nhiều hơn 1 bài thi)
-                if len(results) > 1:
-                    from grading_system import GradingSystem
-
-                    # Tạo một instance tạm để tính thống kê
-                    # (Trong thực tế, thống kê nên được truyền vào từ ngoài)
-                    scores = [r["score"] for r in results]
-                    max_score = results[0]["max_score"] if results else 10
+                # Sheet 3: Thống kê (nếu có nhiều hơn 1 bài thi hợp lệ)
+                ok_results = [r for r in results if r.get("status") != "error"]
+                if len(ok_results) > 1:
+                    scores = [r["score"] for r in ok_results]
+                    max_score = ok_results[0]["max_score"] if ok_results else 10
 
                     stats_data = {
                         "Chỉ số": [
-                            "Tổng số sinh viên",
+                            "Tổng số sinh viên hợp lệ",
+                            "Tổng số phiếu lỗi",
                             "Điểm trung bình",
                             "Điểm cao nhất",
                             "Điểm thấp nhất",
@@ -124,7 +135,8 @@ class ExcelExporter:
                             "Tỷ lệ đạt (%)",
                         ],
                         "Giá trị": [
-                            len(results),
+                            len(ok_results),
+                            len(results) - len(ok_results),
                             round(sum(scores) / len(scores), 2) if scores else 0,
                             max(scores) if scores else 0,
                             min(scores) if scores else 0,

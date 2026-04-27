@@ -32,36 +32,50 @@ class CSVExporter:
             if not output_path.endswith('.csv'):
                 output_path = output_path.rsplit('.', 1)[0] + '.csv'
 
-            # Sắp xếp kết quả theo số báo danh
-            sorted_results = sorted(results, key=lambda x: x["student_id"])
+            # Sắp xếp kết quả theo số báo danh, lỗi không có SBD sẽ nằm cuối theo tên file
+            sorted_results = sorted(
+                results,
+                key=lambda x: (x.get("student_id") or "~", x.get("image_file", "")),
+            )
 
             # Xuất file kết quả chính
             with open(output_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
                 fieldnames = [
-                    "Số báo danh",
-                    "Mã đề",
-                    "Điểm",
-                    "Số câu đúng",
-                    "Số câu sai",
-                    "Tổng số câu",
-                    "Điểm tối đa",
-                    "Phần trăm (%)",
-                    "Tên file ảnh",
+                    "image_file",
+                    "student_id",
+                    "exam_code",
+                    "score",
+                    "correct_count",
+                    "wrong_questions",
+                    "status",
+                    "error",
+                    "incorrect_count",
+                    "total_questions",
+                    "max_score",
+                    "percentage",
                 ]
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
 
                 for result in sorted_results:
+                    wrong_questions = " ".join(
+                        str(wrong_q["question"])
+                        for wrong_q in result.get("wrong_questions", [])
+                    )
+                    percentage = result.get("percentage", "")
                     writer.writerow({
-                        "Số báo danh": result["student_id"],
-                        "Mã đề": result.get("exam_code", "000"),
-                        "Điểm": result["score"],
-                        "Số câu đúng": result["correct_count"],
-                        "Số câu sai": result["incorrect_count"],
-                        "Tổng số câu": result["total_questions"],
-                        "Điểm tối đa": result["max_score"],
-                        "Phần trăm (%)": round(result["percentage"], 2),
-                        "Tên file ảnh": result.get("image_file", ""),
+                        "image_file": result.get("image_file", ""),
+                        "student_id": result.get("student_id", ""),
+                        "exam_code": result.get("exam_code", ""),
+                        "score": result.get("score", ""),
+                        "correct_count": result.get("correct_count", ""),
+                        "wrong_questions": wrong_questions,
+                        "status": result.get("status", "ok"),
+                        "error": result.get("error", ""),
+                        "incorrect_count": result.get("incorrect_count", ""),
+                        "total_questions": result.get("total_questions", ""),
+                        "max_score": result.get("max_score", ""),
+                        "percentage": round(percentage, 2) if isinstance(percentage, (int, float)) else percentage,
                     })
 
             # Xuất file chi tiết câu sai (nếu yêu cầu)
@@ -69,9 +83,11 @@ class CSVExporter:
                 detail_path = output_path.rsplit('.', 1)[0] + '_chi_tiet.csv'
                 detail_data = []
                 for result in sorted_results:
-                    for wrong_q in result["wrong_questions"]:
+                    if result.get("status") == "error":
+                        continue
+                    for wrong_q in result.get("wrong_questions", []):
                         detail_data.append({
-                            "Số báo danh": result["student_id"],
+                            "Số báo danh": result.get("student_id", ""),
                             "Mã đề": result.get("exam_code", "000"),
                             "Câu hỏi": wrong_q["question"],
                             "Đáp án đúng": wrong_q["correct_answer"],
@@ -92,11 +108,12 @@ class CSVExporter:
                         writer.writerows(detail_data)
                     print(f"Đã xuất chi tiết câu sai ra file: {detail_path}")
 
-            # Xuất file thống kê (nếu có nhiều hơn 1 bài thi)
-            if len(results) > 1:
+            # Xuất file thống kê (nếu có nhiều hơn 1 bài thi hợp lệ)
+            ok_results = [r for r in results if r.get("status") != "error"]
+            if len(ok_results) > 1:
                 stats_path = output_path.rsplit('.', 1)[0] + '_thong_ke.csv'
-                scores = [r["score"] for r in results]
-                max_score = results[0]["max_score"] if results else 10
+                scores = [r["score"] for r in ok_results]
+                max_score = ok_results[0]["max_score"] if ok_results else 10
 
                 with open(stats_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
                     fieldnames = ["Chỉ số", "Giá trị"]
@@ -104,7 +121,8 @@ class CSVExporter:
                     writer.writeheader()
 
                     stats_data = [
-                        {"Chỉ số": "Tổng số sinh viên", "Giá trị": len(results)},
+                        {"Chỉ số": "Tổng số sinh viên hợp lệ", "Giá trị": len(ok_results)},
+                        {"Chỉ số": "Tổng số phiếu lỗi", "Giá trị": len(results) - len(ok_results)},
                         {"Chỉ số": "Điểm trung bình", "Giá trị": round(sum(scores) / len(scores), 2) if scores else 0},
                         {"Chỉ số": "Điểm cao nhất", "Giá trị": max(scores) if scores else 0},
                         {"Chỉ số": "Điểm thấp nhất", "Giá trị": min(scores) if scores else 0},

@@ -31,14 +31,39 @@ def is_valid_exam_code(exam_code: str) -> bool:
 _all_answer_keys = {}
 _num_questions = 40
 _points_per_question = 0.25
+_debug_enabled = True
 
 
-def _init_worker(answer_keys, num_q, points):
+def _init_worker(answer_keys, num_q, points, debug_enabled=True):
     """Khởi tạo worker với dữ liệu cần thiết"""
-    global _all_answer_keys, _num_questions, _points_per_question
+    global _all_answer_keys, _num_questions, _points_per_question, _debug_enabled
     _all_answer_keys = answer_keys
     _num_questions = num_q
     _points_per_question = points
+    _debug_enabled = debug_enabled
+
+
+def _error_result(
+    image_path: str,
+    error: str,
+    student_id: str = "",
+    exam_code: str = "",
+) -> Dict:
+    """Tạo kết quả lỗi để vẫn xuất được Excel/CSV."""
+    return {
+        "image_file": os.path.basename(image_path),
+        "student_id": student_id,
+        "exam_code": exam_code,
+        "score": "",
+        "correct_count": "",
+        "incorrect_count": "",
+        "total_questions": _num_questions,
+        "max_score": _num_questions * _points_per_question,
+        "percentage": "",
+        "wrong_questions": [],
+        "status": "error",
+        "error": error,
+    }
 
 
 def _process_single_image(image_path: str) -> Dict:
@@ -46,38 +71,50 @@ def _process_single_image(image_path: str) -> Dict:
     Xử lý và chấm điểm một ảnh (chạy trong worker process)
 
     Returns:
-        Dict kết quả hoặc None nếu lỗi
+        Dict kết quả, luôn có status/error nếu lỗi
     """
     global _all_answer_keys, _num_questions, _points_per_question
 
     try:
-        processor = ExamSheetProcessor(_num_questions)
+        processor = ExamSheetProcessor(_num_questions, debug=_debug_enabled)
         result = processor.process_exam_sheet(image_path)
 
-        if result:
-            student_id, exam_code, student_answers = result
+        if not result:
+            return _error_result(image_path, "Không đọc được phiếu")
 
-            # Kiểm tra mã đề
-            if not is_valid_exam_code(exam_code):
-                return None
+        student_id, exam_code, student_answers = result
 
-            # Tìm đáp án theo mã đề
-            answer_key = _all_answer_keys.get(exam_code)
-            if answer_key is None:
-                return None
-
-            # Chấm điểm
-            grading_system = GradingSystem(answer_key, _points_per_question)
-            graded_result = grading_system.get_detailed_results(
-                student_id, student_answers
+        # Kiểm tra mã đề
+        if not is_valid_exam_code(exam_code):
+            return _error_result(
+                image_path,
+                f"Invalid exam_code: {exam_code}",
+                student_id=student_id,
+                exam_code=exam_code,
             )
-            graded_result["exam_code"] = exam_code
-            graded_result["image_file"] = os.path.basename(image_path)
-            return graded_result
-    except Exception:
-        pass
 
-    return None
+        # Tìm đáp án theo mã đề
+        answer_key = _all_answer_keys.get(exam_code)
+        if answer_key is None:
+            return _error_result(
+                image_path,
+                f"Answer key not found for exam_code: {exam_code}",
+                student_id=student_id,
+                exam_code=exam_code,
+            )
+
+        # Chấm điểm
+        grading_system = GradingSystem(answer_key, _points_per_question)
+        graded_result = grading_system.get_detailed_results(
+            student_id, student_answers
+        )
+        graded_result["exam_code"] = exam_code
+        graded_result["image_file"] = os.path.basename(image_path)
+        graded_result["status"] = "ok"
+        graded_result["error"] = ""
+        return graded_result
+    except Exception as e:
+        return _error_result(image_path, str(e))
 
 
 def read_answer_key_from_text(file_path: str) -> Tuple[str, Dict]:
@@ -215,6 +252,7 @@ def process_and_grade(
     all_answer_keys: Dict[str, Dict],
     num_questions: int,
     points_per_question: float,
+    debug_enabled: bool = True,
 ):
     """
     Xử lý và chấm điểm các phiếu thi (đa luồng)
@@ -224,6 +262,7 @@ def process_and_grade(
         all_answer_keys: Dict chứa đáp án theo mã đề {mã_đề: {câu: đáp_án}}
         num_questions: Số câu hỏi
         points_per_question: Điểm mỗi câu
+        debug_enabled: Có lưu ảnh debug aligned/thresh hay không
     """
     import time
 
@@ -260,7 +299,7 @@ def process_and_grade(
     with Pool(
         processes=num_workers,
         initializer=_init_worker,
-        initargs=(all_answer_keys, num_questions, points_per_question),
+        initargs=(all_answer_keys, num_questions, points_per_question, debug_enabled),
     ) as pool:
         # Submit tất cả tasks
         async_results = []
@@ -281,9 +320,9 @@ def process_and_grade(
     bar = "█" * 30
     print(f"\r✅ Hoàn thành chấm điểm: [{bar}] 100% ({total}/{total})    ")
 
-    skipped = total - len(results)
-    if skipped > 0:
-        print(f"   ⚠️  Bỏ qua {skipped} phiếu không hợp lệ")
+    error_count = sum(1 for result in results if result.get("status") == "error")
+    if error_count > 0:
+        print(f"   ⚠️  Có {error_count} phiếu lỗi, xem cột status/error trong file xuất")
 
     # Log thời gian
     if elapsed_time < 60:
@@ -352,6 +391,12 @@ Ví dụ sử dụng:
         "-p", "--points", type=float, default=0.25, help="Điểm mỗi câu (mặc định: 0.25)"
     )
 
+    parser.add_argument(
+        "--prod",
+        action="store_true",
+        help="Chế độ production: không lưu ảnh debug aligned/thresh",
+    )
+
     args = parser.parse_args()
 
     # Banner
@@ -402,7 +447,11 @@ Ví dụ sử dụng:
 
     # 3. Xử lý và chấm điểm
     results = process_and_grade(
-        image_files, all_answer_keys, args.num_questions, args.points
+        image_files,
+        all_answer_keys,
+        args.num_questions,
+        args.points,
+        debug_enabled=not args.prod,
     )
 
     # 4. Hiển thị kết quả

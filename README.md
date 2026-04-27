@@ -1,108 +1,127 @@
-# 📝 Phần Mềm Chấm Điểm Trắc Nghiệm - Hướng Dẫn Windows
+# Phần Mềm Chấm Điểm Trắc Nghiệm
 
-## 🚀 Cài Đặt
+## Yêu cầu chung
 
-### Bước 1: Cài đặt Python
+- Python 3.10+.
+- File đáp án đặt trong thư mục `answers/`, mỗi mã đề là một file `.txt`, ví dụ `001.txt`.
+- Ảnh phiếu thi đặt trong thư mục `exams/`.
+- Kết quả Excel sẽ được xuất vào thư mục `result/`.
 
-1. Tải Python từ [python.org/downloads](https://www.python.org/downloads/)
-2. Chạy file cài đặt
-3. ✅ **QUAN TRỌNG:** Tick vào **"Add Python to PATH"** ở màn hình đầu tiên
-4. Nhấn **Install Now**
+## Cài đặt trên macOS
 
-### Bước 2: Kiểm tra cài đặt
+Mở Terminal tại thư mục dự án rồi chạy:
 
-Mở **Command Prompt** (nhấn `Win + R`, gõ `cmd`, Enter) và chạy:
-
-```cmd
-python --version
+```bash
+cd /duong/dan/den/cv-ocr
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Nếu hiện `Python 3.x.x` là thành công ✅
+Nếu máy dùng lệnh `python` thay cho `python3`, có thể dùng:
 
----
+```bash
+python -m venv venv
+```
 
-## ▶️ Chạy Chương Trình
+## Cài đặt trên Windows
 
-### Chuẩn bị
-
-1. **Đáp án:** Đặt file `.txt` trong thư mục `answers\` (mỗi file = 1 mã đề)
-2. **Ảnh phiếu thi:** Đặt vào thư mục `exams\`
-
-### Chạy chấm điểm
-
-**Cách 1: Double-click (đơn giản nhất)**
-- Mở thư mục chứa chương trình
-- Double-click vào file `run_grading_windows.bat`
-
-**Cách 2: Chạy thuần Python (từng bước)**
-
-Mở **Command Prompt** và chạy lần lượt:
+1. Tải Python từ [python.org/downloads](https://www.python.org/downloads/).
+2. Khi cài đặt, tick **Add Python to PATH**.
+3. Mở Command Prompt hoặc PowerShell tại thư mục dự án rồi chạy:
 
 ```cmd
-cd C:\đường\dẫn\đến\thư\mục\scan
-
-rem Tạo môi trường ảo (chỉ cần chạy 1 lần)
 python -m venv venv
-
-rem Kích hoạt môi trường ảo
 venv\Scripts\activate
-
-rem Cài đặt thư viện (chỉ cần chạy 1 lần)
 pip install -r requirements.txt
+```
 
-rem Chạy chấm điểm
+## Cách chạy chấm điểm
+
+### macOS
+
+Chạy bình thường, có lưu ảnh debug vào thư mục `debug/`:
+
+```bash
+source venv/bin/activate
+python run_grading.py -a answers/ -i exams/
+```
+
+Chạy production, bỏ qua lưu ảnh debug để nhanh hơn và không sinh file `debug/*_aligned.jpg`, `debug/*_thresh.jpg`:
+
+```bash
+source venv/bin/activate
+python run_grading.py -a answers/ -i exams/ --prod
+```
+
+### Windows
+
+Chạy bình thường, có lưu ảnh debug vào thư mục `debug\`:
+
+```cmd
+venv\Scripts\activate
 python run_grading.py -a answers\ -i exams\
 ```
 
-> 💡 **Lưu ý:** Từ lần sau chỉ cần kích hoạt venv và chạy:
-> ```cmd
-> venv\Scripts\activate
-> python run_grading.py -a answers\ -i exams\
-> ```
+Chạy production, bỏ qua lưu ảnh debug để nhanh hơn và không sinh file `debug\*_aligned.jpg`, `debug\*_thresh.jpg`:
 
-### Các tùy chọn
+```cmd
+venv\Scripts\activate
+python run_grading.py -a answers\ -i exams\ --prod
+```
+
+Có thể chạy nhanh bằng file batch trên Windows:
+
+```cmd
+run_grading_windows.bat
+```
+
+## Tùy chọn dòng lệnh
 
 | Tùy chọn | Mô tả | Mặc định |
 |----------|-------|----------|
-| `-a` | Thư mục đáp án | (bắt buộc) |
-| `-i` | Thư mục ảnh phiếu thi | (bắt buộc) |
-| `-o` | File Excel output | `result\ketqua_*.xlsx` |
-| `-n` | Số câu hỏi | 40 |
-| `-p` | Điểm mỗi câu | 0.25 |
+| `-a`, `--answers` | File đáp án hoặc thư mục đáp án | Bắt buộc nếu không dùng `-m` |
+| `-i`, `--images` | Ảnh phiếu thi hoặc thư mục ảnh | Bắt buộc |
+| `-o`, `--output` | File Excel output | `result/ketqua_YYYYMMDD_HHMMSS.xlsx` |
+| `-n`, `--num-questions` | Số câu hỏi | 40 |
+| `-p`, `--points` | Điểm mỗi câu | 0.25 |
+| `--prod` | Không lưu ảnh debug aligned/thresh | Tắt |
+| `-m`, `--manual` | Nhập đáp án thủ công từ terminal | Tắt |
 
----
+## Phúc khảo một bài theo số báo danh
 
-## 🔍 Phúc Khảo Bài Thi
+### macOS
 
-Kiểm tra chi tiết bài thi của 1 học sinh theo số báo danh:
+```bash
+source venv/bin/activate
+python run_review.py 123456 -a answers/ -i exams/
+```
+
+### Windows
 
 ```cmd
+venv\Scripts\activate
 python run_review.py 123456 -a answers\ -i exams\
 ```
 
----
+## Kết quả
 
-## 📊 Kết Quả
-
-File Excel sẽ được lưu trong thư mục `result\` với 3 sheet:
+File Excel trong thư mục `result/` gồm các sheet:
 
 | Sheet | Nội dung |
 |-------|----------|
 | **Kết quả** | Điểm tổng quan của tất cả học sinh |
 | **Chi tiết câu sai** | Liệt kê từng câu sai của mỗi học sinh |
-| **Thống kê** | Điểm TB, cao nhất, thấp nhất, tỷ lệ đạt |
+| **Thống kê** | Điểm trung bình, cao nhất, thấp nhất, tỷ lệ đạt |
 
----
+Nếu có phiếu lỗi, xem cột `status` và `error` trong file Excel.
 
-## ❌ Xử Lý Lỗi
+## Xử lý lỗi thường gặp
 
 | Lỗi | Cách sửa |
 |-----|----------|
-| Python is not available | Cài lại Python, tick **"Add Python to PATH"** |
-| pip install failed | Chạy cmd với quyền **Admin** |
-| cv2 module not found | `pip install opencv-python numpy pandas openpyxl` |
-
----
-
-Made with ❤️ by AI Assistant
-# 📝 Phần Mềm Chấm Điểm Trắc Nghiệm - Hướng Dẫn Windows
+| `Python is not available` | Cài lại Python và tick **Add Python to PATH** trên Windows |
+| `python: command not found` trên macOS | Dùng `python3` thay cho `python` |
+| `pip install failed` | Kích hoạt venv rồi chạy lại `pip install -r requirements.txt` |
+| `cv2 module not found` | Chạy `pip install -r requirements.txt` trong venv |
+| Không xuất Excel | Kiểm tra thư mục `result/` và quyền ghi file |

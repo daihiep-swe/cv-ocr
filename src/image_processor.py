@@ -7,6 +7,8 @@ Format: Xử lý đầy đủ 3 phần
 - PHẦN III: 6 câu điền số (mỗi câu 4 chữ số, mỗi chữ số 0-9)
 """
 
+import os
+
 import cv2
 import numpy as np
 from typing import List, Tuple, Dict, Optional
@@ -46,44 +48,132 @@ class ExamSheetProcessor:
     DUPLICATE_THRESHOLD = 25
     
     # ==================== VÙNG SỐ BÁO DANH (tỷ lệ % ảnh) ====================
-    SBD_X_START = 0.73
-    SBD_X_END = 0.85
-    SBD_Y_START = 0.09
+    # Tọa độ sau khi align_sheet() warp ảnh theo marker đen
+    SBD_X_START = 0.75
+    SBD_X_END = 0.88
+    SBD_Y_START = 0.058
     SBD_Y_END = 0.285
     SBD_NUM_COLS = 6
     
     # ==================== VÙNG MÃ ĐỀ (tỷ lệ % ảnh) ====================
-    EXAM_X_START = 0.88
-    EXAM_X_END = 0.94
-    EXAM_Y_START = 0.09
+    # Tọa độ sau khi align_sheet() warp ảnh theo marker đen
+    EXAM_X_START = 0.913
+    EXAM_X_END = 0.978
+    EXAM_Y_START = 0.058
     EXAM_Y_END = 0.285
     EXAM_NUM_COLS = 3
     
     # ==================== VÙNG ĐÁP ÁN PHẦN I (tỷ lệ % ảnh) ====================
+    # Tọa độ sau khi align_sheet() warp ảnh theo marker đen
     ANSWER_Y_START = 0.365
     ANSWER_Y_END = 0.523
     # Mỗi tuple: (x_start, x_end, câu_bắt_đầu)
     ANSWER_COLUMNS = [
-        (0.118, 0.265, 1),    # Cột 1: câu 1-10
-        (0.331, 0.478, 11),   # Cột 2: câu 11-20
-        (0.544, 0.691, 21),   # Cột 3: câu 21-30
-        (0.757, 0.904, 31),   # Cột 4: câu 31-40
+        (0.075, 0.255, 1),    # Cột 1: câu 1-10
+        (0.308, 0.487, 11),   # Cột 2: câu 11-20
+        (0.541, 0.720, 21),   # Cột 3: câu 21-30
+        (0.775, 0.953, 31),   # Cột 4: câu 31-40
     ]
     
     # Mapping đáp án
     CHOICE_MAP = {0: "A", 1: "B", 2: "C", 3: "D"}
 
-    def __init__(self, num_questions: int = 40):
+    def __init__(self, num_questions: int = 40, debug: bool = True):
         """
         Khởi tạo processor
 
         Args:
             num_questions: Số câu hỏi (mặc định 40)
+            debug: Có lưu ảnh debug aligned/thresh hay không
         """
         self.num_questions = num_questions
         self.choices_per_question = 4  # A, B, C, D
+        self.debug = debug
     
-    def preprocess_image(self, image_path: str) -> Optional[np.ndarray]:
+    def align_sheet(self, image: np.ndarray) -> np.ndarray:
+        """
+        Căn phiếu bằng marker đen.
+
+        Args:
+            image: Ảnh gốc chụp điện thoại hoặc scan lệch
+
+        Returns:
+            Ảnh đã warp về STANDARD_WIDTH x STANDARD_HEIGHT
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        thresh = cv2.adaptiveThreshold(
+            blur,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            35,
+            10,
+        )
+
+        contours, _ = cv2.findContours(
+            thresh,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+
+        markers = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+
+            if area < 200 or area > 20000:
+                continue
+
+            x, y, w, h = cv2.boundingRect(cnt)
+            ratio = w / float(h) if h > 0 else 0
+
+            if not (0.65 <= ratio <= 1.35):
+                continue
+
+            fill_ratio = area / float(w * h) if w * h > 0 else 0
+
+            if fill_ratio >= 0.55:
+                markers.append((x, y, w, h))
+
+        if len(markers) < 4:
+            raise ValueError(f"Không đủ marker để căn phiếu, found={len(markers)}")
+
+        centers = np.array(
+            [[x + w / 2, y + h / 2] for x, y, w, h in markers],
+            dtype=np.float32,
+        )
+
+        top_left = centers[np.argmin(centers[:, 0] + centers[:, 1])]
+        top_right = centers[np.argmax(centers[:, 0] - centers[:, 1])]
+        bottom_right = centers[np.argmax(centers[:, 0] + centers[:, 1])]
+        bottom_left = centers[np.argmax(centers[:, 1] - centers[:, 0])]
+
+        src = np.array(
+            [top_left, top_right, bottom_right, bottom_left],
+            dtype=np.float32,
+        )
+
+        dst = np.array(
+            [
+                [0, 0],
+                [self.STANDARD_WIDTH - 1, 0],
+                [self.STANDARD_WIDTH - 1, self.STANDARD_HEIGHT - 1],
+                [0, self.STANDARD_HEIGHT - 1],
+            ],
+            dtype=np.float32,
+        )
+
+        matrix = cv2.getPerspectiveTransform(src, dst)
+        aligned = cv2.warpPerspective(
+            image,
+            matrix,
+            (self.STANDARD_WIDTH, self.STANDARD_HEIGHT),
+        )
+
+        return aligned
+
+    def preprocess_image(self, image_path: str) -> Tuple[np.ndarray, np.ndarray]:
         """
         Tiền xử lý ảnh phiếu thi
         
@@ -91,47 +181,31 @@ class ExamSheetProcessor:
             image_path: Đường dẫn đến file ảnh
 
         Returns:
-            Ảnh đã được xử lý hoặc None nếu lỗi
+            Tuple (ảnh đã căn phiếu, ảnh threshold)
         """
-        try:
-            # Đọc ảnh
-            image = cv2.imread(image_path)
-            if image is None:
-                return None
+        image = cv2.imread(image_path)
+        if image is None:
+            raise ValueError(f"Không đọc được ảnh: {image_path}")
 
-            # Resize về kích thước chuẩn nếu khác tỷ lệ
-            h, w = image.shape[:2]
-            need_enhance = False
-            if w != self.STANDARD_WIDTH or h != self.STANDARD_HEIGHT:
-                # Nếu upscale (ảnh nhỏ hơn chuẩn) thì cần enhance
-                if w < self.STANDARD_WIDTH or h < self.STANDARD_HEIGHT:
-                    need_enhance = True
-                image = cv2.resize(
-                    image, 
-                    (self.STANDARD_WIDTH, self.STANDARD_HEIGHT), 
-                    interpolation=cv2.INTER_CUBIC if need_enhance else cv2.INTER_AREA
-                )
+        aligned = self.align_sheet(image)
 
-            # Chuyển sang grayscale
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-            # Làm mờ để giảm nhiễu
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        _, thresh = cv2.threshold(
+            blurred,
+            0,
+            255,
+            cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
+        )
 
-            # Áp dụng threshold OTSU trực tiếp (không cần đảo ngược)
-            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        if self.debug:
+            os.makedirs("debug", exist_ok=True)
+            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            cv2.imwrite(os.path.join("debug", f"{base_name}_aligned.jpg"), aligned)
+            cv2.imwrite(os.path.join("debug", f"{base_name}_thresh.jpg"), thresh)
 
-            # Nếu ảnh được upscale, dùng morphology để làm đậm bubble
-            if need_enhance:
-                # Dilation để làm đậm các vùng đen (bubble đã tô)
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-                thresh = cv2.dilate(thresh, kernel, iterations=1)
-
-            return thresh
-
-        except Exception as e:
-            print(f"Lỗi khi xử lý ảnh: {e}")
-            return None
+        return aligned, thresh
 
     def find_answer_bubbles(
         self, thresh_image: np.ndarray
@@ -318,38 +392,51 @@ class ExamSheetProcessor:
         Returns:
             Chuỗi số đọc được
         """
+        return "".join(item["digit"] for item in self._analyze_digit_grid(image, full_grid))
+
+    def _analyze_digit_grid(self, image: np.ndarray, full_grid: List[List[Tuple]]) -> List[Dict]:
+        """Phân tích grid số và trả chi tiết độ đậm từng cột để debug."""
         if not full_grid:
-            return ""
-        
-        result = ""
-        
+            return []
+
+        analysis = []
+
         for col_idx, col_bubbles in enumerate(full_grid):
-            # Tính độ đậm của từng ô trong cột
             darkness_values = []
             for row_idx, (x, y, w, h) in enumerate(col_bubbles):
                 bubble_roi = image[y:y+h, x:x+w]
                 if bubble_roi.size > 0:
-                    avg_intensity = np.mean(bubble_roi)
-                    darkness_values.append((row_idx, avg_intensity))
+                    avg_intensity = float(np.mean(bubble_roi))
+                    darkness_values.append((row_idx, avg_intensity, x, y, w, h))
                 else:
-                    darkness_values.append((row_idx, 0))
-            
+                    darkness_values.append((row_idx, 0.0, x, y, w, h))
+
             if darkness_values:
-                # Sắp xếp theo độ đậm (cao nhất = được tô)
-                darkness_values.sort(key=lambda x: x[1], reverse=True)
-                selected = darkness_values[0]
+                sorted_values = sorted(darkness_values, key=lambda x: x[1], reverse=True)
+                selected = sorted_values[0]
                 max_dark = selected[1]
-                min_dark = darkness_values[-1][1]
-                
-                if max_dark - min_dark >= self.CONTRAST_THRESHOLD:
-                    digit = selected[0]
-                    result += str(digit)
-                else:
-                    result += "0"
+                min_dark = sorted_values[-1][1]
+                contrast = max_dark - min_dark
+                digit = str(selected[0]) if contrast >= self.CONTRAST_THRESHOLD else "0"
             else:
-                result += "0"
-        
-        return result
+                sorted_values = []
+                selected = None
+                max_dark = 0.0
+                min_dark = 0.0
+                contrast = 0.0
+                digit = "0"
+
+            analysis.append({
+                "col_idx": col_idx,
+                "digit": digit,
+                "selected": selected,
+                "max_dark": max_dark,
+                "min_dark": min_dark,
+                "contrast": contrast,
+                "values": sorted_values,
+            })
+
+        return analysis
     
     def _ensure_full_grid(self, bubbles: List[Tuple], num_cols: int, num_rows: int = 10) -> List[List[Tuple]]:
         """
@@ -982,18 +1069,12 @@ class ExamSheetProcessor:
             Tuple (số báo danh, mã đề, dict đáp án) hoặc None nếu lỗi
         """
         # Tiền xử lý ảnh
-        thresh_image = self.preprocess_image(image_path)
-        if thresh_image is None:
-            return None
+        aligned_image, thresh_image = self.preprocess_image(image_path)
 
         # Tìm các ô tô
         bubbles = self.find_answer_bubbles(thresh_image)
         if not bubbles:
-            print("Không tìm thấy ô tô nào trên phiếu")
-            return None
-
-        # Đọc lại ảnh gốc cho việc trích xuất
-        original_image = cv2.imread(image_path)
+            raise ValueError("Không tìm thấy ô tô nào trên phiếu")
 
         # Trích xuất số báo danh và mã đề
         student_id, exam_code = self.extract_student_id_and_exam_code(
@@ -1018,16 +1099,14 @@ class ExamSheetProcessor:
         """
         import os
         
-        # Đọc ảnh gốc
-        image = cv2.imread(image_path)
-        if image is None:
-            print(f"Không thể đọc ảnh: {image_path}")
+        # Tiền xử lý để tìm bubbles
+        try:
+            image, thresh_image = self.preprocess_image(image_path)
+        except ValueError as e:
+            print(str(e))
             return None
             
         height, width = image.shape[:2]
-        
-        # Tiền xử lý để tìm bubbles
-        thresh_image = self.preprocess_image(image_path)
         bubbles = self.find_answer_bubbles(thresh_image)
         
         # Màu sắc cho các vùng
@@ -1035,6 +1114,7 @@ class ExamSheetProcessor:
         COLOR_EXAM = (255, 0, 0)      # Xanh dương - Mã đề
         COLOR_ANSWERS = (0, 0, 255)   # Đỏ - Vùng đáp án
         COLOR_SELECTED = (255, 0, 255) # Tím - Ô được chọn (tô đậm nhất)
+        COLOR_GRID = (0, 165, 255)    # Cam - Grid ảo
         
         # ========== VẼ VÙNG SỐ BÁO DANH ==========
         sbd_x1 = int(self.SBD_X_START * width)
@@ -1056,35 +1136,21 @@ class ExamSheetProcessor:
         for (x, y, w, h) in sbd_bubbles:
             cv2.rectangle(image, (x, y), (x + w, y + h), COLOR_SBD, 1)
         
-        # Nhóm theo cột và tìm ô được chọn
-        sbd_columns = self._group_bubbles_by_column(sbd_bubbles, tolerance=20)
-        valid_sbd_cols = [col for col in sbd_columns if len(col) >= 8][:self.SBD_NUM_COLS]
-        
-        student_id = ""
-        for col_bubbles in valid_sbd_cols:
-            col_bubbles = sorted(col_bubbles, key=lambda b: b[1])[:10]
-            
-            # Tính độ đậm
-            darkness_values = []
-            for digit_idx, (x, y, w, h) in enumerate(col_bubbles):
-                bubble_roi = thresh_image[y:y+h, x:x+w]
-                if bubble_roi.size > 0:
-                    avg_intensity = np.mean(bubble_roi)
-                    darkness_values.append((digit_idx, avg_intensity, x, y, w, h))
-            
-            if darkness_values:
-                darkness_values.sort(key=lambda x: x[1], reverse=True)
-                selected = darkness_values[0]
-                max_dark = selected[1]
-                min_dark = darkness_values[-1][1]
-                
-                if max_dark - min_dark >= self.CONTRAST_THRESHOLD:
-                    # Vẽ ô được chọn với màu tím và đường dày hơn
-                    x, y, w, h = selected[2], selected[3], selected[4], selected[5]
-                    cv2.rectangle(image, (x-2, y-2), (x+w+2, y+h+2), COLOR_SELECTED, 3)
-                    student_id += str(selected[0])
-                else:
-                    student_id += "0"
+        sbd_full_grid = self._ensure_full_grid(sbd_bubbles, num_cols=self.SBD_NUM_COLS, num_rows=10)
+        sbd_analysis = self._analyze_digit_grid(thresh_image, sbd_full_grid)
+        student_id = "".join(item["digit"] for item in sbd_analysis)
+
+        for item in sbd_analysis:
+            selected = item["selected"]
+            for row_idx, _, x, y, w, h in item["values"]:
+                cv2.rectangle(image, (x, y), (x + w, y + h), COLOR_GRID, 1)
+                cv2.putText(image, str(row_idx), (x + w + 2, y + h),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.35, COLOR_GRID, 1)
+            if selected and item["contrast"] >= self.CONTRAST_THRESHOLD:
+                _, _, x, y, w, h = selected
+                cv2.rectangle(image, (x-2, y-2), (x+w+2, y+h+2), COLOR_SELECTED, 3)
+                cv2.putText(image, item["digit"], (x - 5, y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, COLOR_SELECTED, 2)
         
         # ========== VẼ VÙNG MÃ ĐỀ ==========
         exam_x1 = int(self.EXAM_X_START * width)
@@ -1105,33 +1171,21 @@ class ExamSheetProcessor:
         for (x, y, w, h) in exam_bubbles:
             cv2.rectangle(image, (x, y), (x + w, y + h), COLOR_EXAM, 1)
         
-        # Nhóm theo cột và tìm ô được chọn cho mã đề
-        exam_columns = self._group_bubbles_by_column(exam_bubbles, tolerance=20)
-        valid_exam_cols = [col for col in exam_columns if len(col) >= 8][:self.EXAM_NUM_COLS]
-        
-        exam_code = ""
-        for col_bubbles in valid_exam_cols:
-            col_bubbles = sorted(col_bubbles, key=lambda b: b[1])[:10]
-            
-            darkness_values = []
-            for digit_idx, (x, y, w, h) in enumerate(col_bubbles):
-                bubble_roi = thresh_image[y:y+h, x:x+w]
-                if bubble_roi.size > 0:
-                    avg_intensity = np.mean(bubble_roi)
-                    darkness_values.append((digit_idx, avg_intensity, x, y, w, h))
-            
-            if darkness_values:
-                darkness_values.sort(key=lambda x: x[1], reverse=True)
-                selected = darkness_values[0]
-                max_dark = selected[1]
-                min_dark = darkness_values[-1][1]
-                
-                if max_dark - min_dark >= self.CONTRAST_THRESHOLD:
-                    x, y, w, h = selected[2], selected[3], selected[4], selected[5]
-                    cv2.rectangle(image, (x-2, y-2), (x+w+2, y+h+2), COLOR_SELECTED, 3)
-                    exam_code += str(selected[0])
-                else:
-                    exam_code += "0"
+        exam_full_grid = self._ensure_full_grid(exam_bubbles, num_cols=self.EXAM_NUM_COLS, num_rows=10)
+        exam_analysis = self._analyze_digit_grid(thresh_image, exam_full_grid)
+        exam_code = "".join(item["digit"] for item in exam_analysis)
+
+        for item in exam_analysis:
+            selected = item["selected"]
+            for row_idx, _, x, y, w, h in item["values"]:
+                cv2.rectangle(image, (x, y), (x + w, y + h), COLOR_GRID, 1)
+                cv2.putText(image, str(row_idx), (x + w + 2, y + h),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.35, COLOR_GRID, 1)
+            if selected and item["contrast"] >= self.CONTRAST_THRESHOLD:
+                _, _, x, y, w, h = selected
+                cv2.rectangle(image, (x-2, y-2), (x+w+2, y+h+2), COLOR_SELECTED, 3)
+                cv2.putText(image, item["digit"], (x - 5, y - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, COLOR_SELECTED, 2)
         
         # ========== VẼ VÙNG ĐÁP ÁN PHẦN I ==========
         for col_x_start, col_x_end, start_q in self.ANSWER_COLUMNS:
@@ -1151,7 +1205,7 @@ class ExamSheetProcessor:
                     cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 3)
         cv2.putText(image, f"Bubbles found: {len(bubbles)}", (50, 260),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 2)
-        cv2.putText(image, f"SBD cols: {len(valid_sbd_cols)}, Exam cols: {len(valid_exam_cols)}", 
+        cv2.putText(image, f"SBD bubbles: {len(sbd_bubbles)}, Exam bubbles: {len(exam_bubbles)}", 
                     (50, 320), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 2)
         
         # Lưu ảnh
@@ -1163,5 +1217,22 @@ class ExamSheetProcessor:
         print(f"✓ Đã lưu ảnh debug: {output_path}")
         print(f"  - Số báo danh nhận diện: {student_id}")
         print(f"  - Mã đề nhận diện: {exam_code}")
+        print(f"  - SBD bubbles: {len(sbd_bubbles)}, Exam bubbles: {len(exam_bubbles)}")
+
+        print("\nChi tiết SBD:")
+        for item in sbd_analysis:
+            top_values = ", ".join(f"{row}:{value:.1f}" for row, value, *_ in item["values"][:3])
+            print(
+                f"  col {item['col_idx'] + 1}: digit={item['digit']} "
+                f"contrast={item['contrast']:.1f} top=[{top_values}]"
+            )
+
+        print("\nChi tiết mã đề:")
+        for item in exam_analysis:
+            top_values = ", ".join(f"{row}:{value:.1f}" for row, value, *_ in item["values"][:3])
+            print(
+                f"  col {item['col_idx'] + 1}: digit={item['digit']} "
+                f"contrast={item['contrast']:.1f} top=[{top_values}]"
+            )
         
         return output_path
